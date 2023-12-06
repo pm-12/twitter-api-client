@@ -167,6 +167,66 @@ class Account:
 
         return self.gql('POST', Operation.CreateTweet, variables)
 
+    def noteTweet(self, text: str, *, media: any = None, **kwargs) -> dict:
+        variables = {
+            'tweet_text': text,
+            'dark_request': False,
+            'media': {
+                'media_entities': [],
+                'possibly_sensitive': False,
+            },
+            'semantic_annotation_ids': [],
+        }
+
+        if reply_params := kwargs.get('reply_params', {}):
+            variables |= reply_params
+        if quote_params := kwargs.get('quote_params', {}):
+            variables |= quote_params
+        if poll_params := kwargs.get('poll_params', {}):
+            variables |= poll_params
+
+        draft = kwargs.get('draft')
+        schedule = kwargs.get('schedule')
+
+        if draft or schedule:
+            variables = {
+                'post_tweet_request': {
+                    'auto_populate_reply_metadata': False,
+                    'status': text,
+                    'exclude_reply_user_ids': [],
+                    'media_ids': [],
+                },
+            }
+            if media:
+                for m in media:
+                    media_id = self._upload_media(m['media'])
+                    variables['post_tweet_request']['media_ids'].append(media_id)
+                    if alt := m.get('alt'):
+                        self._add_alt_text(media_id, alt)
+
+            if schedule:
+                variables['execute_at'] = (
+                    datetime.strptime(schedule, "%Y-%m-%d %H:%M").timestamp()
+                    if isinstance(schedule, str)
+                    else schedule
+                )
+                return self.gql('POST', Operation.CreateScheduledTweet, variables)
+
+            return self.gql('POST', Operation.CreateDraftTweet, variables)
+
+        # regular tweet
+        if media:
+            for m in media:
+                media_id = self._upload_media(m['media'])
+                variables['media']['media_entities'].append({
+                    'media_id': media_id,
+                    'tagged_users': m.get('tagged_users', [])
+                })
+                if alt := m.get('alt'):
+                    self._add_alt_text(media_id, alt)
+
+        return self.gql('POST', Operation.CreateNoteTweet, variables)
+
     def schedule_tweet(self, text: str, date: int | str, *, media: list = None) -> dict:
         variables = {
             'post_tweet_request': {
